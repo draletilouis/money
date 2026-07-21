@@ -10,38 +10,12 @@ const ledgerTemplate = [
   ['3200', 'Owner Contributions', 'EQUITY', 'OWNER_CONTRIBUTIONS'],
   ['3300', 'Owner Withdrawals', 'EQUITY', 'OWNER_WITHDRAWALS'],
   ['4000', 'Income', 'INCOME', 'INCOME'],
-  ['4100', 'Salary Income', 'INCOME', 'SALARY_INCOME'],
-  ['4200', 'Sales Income', 'INCOME', 'SALES_INCOME'],
-  ['4300', 'Rental Income', 'INCOME', 'RENTAL_INCOME'],
-  ['4900', 'Other Income', 'INCOME', 'OTHER_INCOME'],
   ['5000', 'Expenses', 'EXPENSE', 'EXPENSES'],
-  ['5100', 'Food', 'EXPENSE', 'FOOD_EXPENSE'],
-  ['5200', 'Transport', 'EXPENSE', 'TRANSPORT_EXPENSE'],
-  ['5210', 'Fuel', 'EXPENSE', 'FUEL_EXPENSE'],
-  ['5300', 'Utilities', 'EXPENSE', 'UTILITIES_EXPENSE'],
-  ['5400', 'Marketing', 'EXPENSE', 'MARKETING_EXPENSE'],
-  ['5500', 'Repairs', 'EXPENSE', 'REPAIRS_EXPENSE'],
   ['5800', 'Bank Fees', 'EXPENSE', 'BANK_FEES'],
-  ['5900', 'Other Expenses', 'EXPENSE', 'OTHER_EXPENSE'],
   ['1200', 'Accounts Receivable', 'ASSET', 'ACCOUNTS_RECEIVABLE'],
   ['1500', 'Fixed Assets', 'ASSET', 'FIXED_ASSETS'],
   ['2100', 'Accounts Payable', 'LIABILITY', 'ACCOUNTS_PAYABLE'],
   ['2200', 'Loans Payable', 'LIABILITY', 'LOANS_PAYABLE'],
-] as const;
-
-const categories = [
-  ['Salary', 'INCOME', 'SALARY_INCOME'],
-  ['Sales', 'INCOME', 'SALES_INCOME'],
-  ['Rental income', 'INCOME', 'RENTAL_INCOME'],
-  ['Other income', 'INCOME', 'OTHER_INCOME'],
-  ['Food', 'EXPENSE', 'FOOD_EXPENSE'],
-  ['Transport', 'EXPENSE', 'TRANSPORT_EXPENSE'],
-  ['Fuel', 'EXPENSE', 'FUEL_EXPENSE'],
-  ['Utilities', 'EXPENSE', 'UTILITIES_EXPENSE'],
-  ['Marketing', 'EXPENSE', 'MARKETING_EXPENSE'],
-  ['Repairs', 'EXPENSE', 'REPAIRS_EXPENSE'],
-  ['Bank fees', 'EXPENSE', 'BANK_FEES'],
-  ['Other expense', 'EXPENSE', 'OTHER_EXPENSE'],
 ] as const;
 
 type ProfileInput = { name: string; type: ProfileType; description?: string; baseCurrencyCode: string; financialYearStart: number };
@@ -51,9 +25,6 @@ async function createProfileInDatabase(database: Prisma.TransactionClient, owner
     for (const [code, name, accountClass, systemKey] of ledgerTemplate) {
       await database.ledgerAccount.create({ data: { profileId: profile.id, code, name, accountClass, systemKey } });
     }
-    const accounts = await database.ledgerAccount.findMany({ where: { profileId: profile.id, systemKey: { not: null } } });
-    const byKey = new Map(accounts.map((account) => [account.systemKey, account.id]));
-    await database.category.createMany({ data: categories.map(([name, type, key]) => ({ profileId: profile.id, name, type, ledgerAccountId: byKey.get(key)! })) });
     await database.profilePreference.upsert({ where: { userId: ownerId }, create: { userId: ownerId, selectedProfileId: profile.id }, update: { selectedProfileId: profile.id, allProfiles: false } });
     await database.auditEvent.create({ data: { userId: ownerId, profileId: profile.id, action: 'CREATED', recordType: 'PROFILE', recordId: profile.id, newValues: { name: profile.name, type: profile.type } } });
     return profile;

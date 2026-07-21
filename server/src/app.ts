@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
-import { accountSchema, assetSchema, billSchema, budgetSchema, categorySchema, expectedIncomeSchema, goalProgressSchema, goalSchema, loginSchema, planningSettlementSchema, profileSchema, setupSchema, transactionSchema } from '../../shared/contracts.js';
+import { accountSchema, assetSchema, billSchema, budgetSchema, categorySchema, categoryUpdateSchema, expectedIncomeSchema, goalProgressSchema, goalSchema, loginSchema, planningSettlementSchema, profileSchema, setupSchema, transactionSchema } from '../../shared/contracts.js';
 import { prisma } from './lib/db.js';
 import { AppError, errorHandler, notFound, validate } from './lib/http.js';
 import { createToken, requireAuth } from './middleware/auth.js';
@@ -17,6 +17,7 @@ import { accountSummaries, assertProfileAccess, dashboard, ledgerBalances } from
 import { assertNoBudgetOverlap, getBudgetMovements, payBill, receiveExpectedIncome } from './services/planning-service.js';
 import { buildCashForecast } from './domain/forecast.js';
 import { inclusiveBudgetRange } from './domain/budget.js';
+import { archiveCategory, createCategory, restoreCategory, updateCategory } from './services/category-service.js';
 
 const app = express();
 const param = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
@@ -93,18 +94,25 @@ app.get('/api/profiles/:profileId/categories', async (request, response, next) =
   try {
     const profileId = param(request.params.profileId);
     await assertProfileAccess(request.userId!, profileId);
-    response.json(await prisma.category.findMany({ where: { profileId, active: true }, orderBy: [{ type: 'asc' }, { name: 'asc' }] }));
+    const includeArchived = request.query.includeArchived === 'true';
+    response.json(await prisma.category.findMany({ where: { profileId, ...(includeArchived ? {} : { active: true }) }, orderBy: [{ type: 'asc' }, { name: 'asc' }] }));
   } catch (error) { next(error); }
 });
 
 app.post('/api/profiles/:profileId/categories', validate(categorySchema), async (request, response, next) => {
-  try {
-    const profileId = param(request.params.profileId);
-    await assertProfileAccess(request.userId!, profileId);
-    const ledger = await prisma.ledgerAccount.findFirst({ where: { id: request.body.ledgerAccountId, profileId } });
-    if (!ledger) throw new AppError(400, 'Ledger account does not belong to this profile.');
-    response.status(201).json(await prisma.category.create({ data: { ...request.body, profileId } }));
-  } catch (error) { next(error); }
+  try { response.status(201).json(await createCategory(request.userId!, param(request.params.profileId), request.body)); } catch (error) { next(error); }
+});
+
+app.put('/api/profiles/:profileId/categories/:categoryId', validate(categoryUpdateSchema), async (request, response, next) => {
+  try { response.json(await updateCategory(request.userId!, param(request.params.profileId), param(request.params.categoryId), request.body)); } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/categories/:categoryId/archive', async (request, response, next) => {
+  try { response.json(await archiveCategory(request.userId!, param(request.params.profileId), param(request.params.categoryId))); } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/categories/:categoryId/restore', async (request, response, next) => {
+  try { response.json(await restoreCategory(request.userId!, param(request.params.profileId), param(request.params.categoryId))); } catch (error) { next(error); }
 });
 
 app.get('/api/profiles/:profileId/transactions', async (request, response, next) => {
@@ -212,7 +220,7 @@ app.post('/api/profiles/:profileId/budgets', validate(budgetSchema), async (requ
     const category = await prisma.category.findFirst({ where: { id: request.body.categoryId, profileId, type: 'EXPENSE', active: true } });
     if (!category) throw new AppError(400, 'Choose an expense category from this profile.');
     await assertNoBudgetOverlap(profileId, request.body.categoryId, request.body.startDate, request.body.endDate);
-    response.status(201).json(await prisma.budget.create({ data: { ...request.body, profileId } }));
+    response.status(201).json(await prisma.budget.create({ data: { ...request.body, name: `${category.name} budget`, profileId } }));
   } catch (error) { next(error); }
 });
 
@@ -224,7 +232,7 @@ app.put('/api/profiles/:profileId/budgets/:budgetId', validate(budgetSchema), as
     const category = await prisma.category.findFirst({ where: { id: request.body.categoryId, profileId, type: 'EXPENSE', active: true } });
     if (!category) throw new AppError(400, 'Choose an expense category from this profile.');
     await assertNoBudgetOverlap(profileId, request.body.categoryId, request.body.startDate, request.body.endDate, budget.id);
-    response.json(await prisma.budget.update({ where: { id: budget.id }, data: request.body }));
+    response.json(await prisma.budget.update({ where: { id: budget.id }, data: { ...request.body, name: `${category.name} budget` } }));
   } catch (error) { next(error); }
 });
 

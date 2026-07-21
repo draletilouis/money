@@ -16,6 +16,7 @@ A ledger-backed financial command centre for one owner managing personal finance
 - Owner sign-in and protected API routes
 - Create, switch, and consolidate financial profiles
 - Create cash, bank, mobile money, savings, credit, and other accounts
+- Define, rename, archive, and restore profile-specific income and expense categories; ledger accounts are created automatically
 - Opening balances posted against opening-balance equity
 - Post Money In, Money Out, and transfers with optional fees
 - Balanced journals, stable idempotency keys, and atomic database writes
@@ -23,7 +24,7 @@ A ledger-backed financial command centre for one owner managing personal finance
 - Upload validated receipts, images, PDFs, DOCX, and XLSX files
 - Ledger-derived dashboard, account balances, net worth, trial balance, and profit summary
 - Assets with valuations
-- Editable and archivable budgets with live posted-spending movements, overlap protection, and threshold warnings
+- Category-driven budgets with live posted-spending movements, overlap protection, threshold warnings, and bill-payment previews
 - Operational bills and expected income that post to the ledger when settled
 - Savings goals with progress tracking and 7, 30, and 90-day cash forecasts
 - Budget threshold warnings and upcoming attention items

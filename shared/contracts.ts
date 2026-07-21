@@ -33,9 +33,12 @@ export const accountSchema = z.object({
 
 export const categorySchema = z.object({
   name: z.string().trim().min(2).max(80),
-  type: z.enum(['INCOME', 'EXPENSE', 'ASSET', 'DEBT']),
-  ledgerAccountId: z.string().min(1),
-  parentId: z.string().optional(),
+  type: z.enum(['INCOME', 'EXPENSE']),
+  attachmentRequired: z.boolean().default(false),
+});
+
+export const categoryUpdateSchema = z.object({
+  name: z.string().trim().min(2).max(80),
   attachmentRequired: z.boolean().default(false),
 });
 
@@ -80,7 +83,6 @@ export const assetSchema = z.object({
 });
 
 export const budgetSchema = z.object({
-  name: z.string().trim().min(2).max(100),
   categoryId: z.string().min(1),
   amount: z.coerce.number().positive(),
   startDate: z.coerce.date(),
