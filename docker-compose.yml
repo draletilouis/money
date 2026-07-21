@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: money_manager
+      POSTGRES_PASSWORD: money_manager
+      POSTGRES_DB: money_manager
+    ports:
+      - "5432:5432"
+    volumes:
+      - money_manager_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U money_manager -d money_manager"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  money_manager_postgres:
+

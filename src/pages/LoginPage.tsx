@@ -1,0 +1,11 @@
+import { useState, type FormEvent } from 'react';
+import { ArrowRight, CheckCircle2, WalletCards } from 'lucide-react';
+import { ApiError } from '../api';
+import { useApp } from '../context/AppContext';
+
+export function LoginPage() {
+  const { login } = useApp(); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setError(''); const data = new FormData(event.currentTarget); try { await login(String(data.get('email')), String(data.get('password'))); } catch (caught) { setError(caught instanceof ApiError ? caught.message : 'Unable to sign in.'); } finally { setBusy(false); } };
+  return <main className="login-page"><section className="login-story"><div className="login-brand"><WalletCards/> Money Manager</div><div><p className="eyebrow light">Your financial command centre</p><h1>Every part of your money, finally in one calm place.</h1><p>Personal finances and every business stay separate, while a rigorous ledger keeps the full picture accurate.</p><ul><li><CheckCircle2/> Know what is available right now</li><li><CheckCircle2/> Capture money in or out in seconds</li><li><CheckCircle2/> See the story behind every balance</li></ul></div><blockquote>“Simple on the surface. Rigorous underneath.”</blockquote></section><section className="login-panel"><form onSubmit={submit}><div className="mobile-login-brand"><WalletCards/> Money Manager</div><p className="eyebrow">Welcome back</p><h2>Sign in to your finances</h2><p className="muted">Use the local owner account to continue.</p>{error && <div className="form-error">{error}</div>}<label><span>Email address</span><input name="email" type="email" defaultValue="owner@moneymanager.local" autoComplete="email" required/></label><label><span>Password</span><input name="password" type="password" defaultValue="MoneyManager2026!" autoComplete="current-password" required/></label><button className="button primary large" disabled={busy}>{busy ? 'Signing in…' : <>Sign in <ArrowRight size={18}/></>}</button><small className="seed-note">Development account is pre-filled after running the database seed.</small></form></section></main>;
+}
+

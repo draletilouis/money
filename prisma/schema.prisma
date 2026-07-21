@@ -1,0 +1,586 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProfileType {
+  PERSONAL
+  BUSINESS
+  INVESTMENT
+  PROJECT
+  OTHER
+}
+
+enum RecordStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AccountType {
+  BANK
+  MOBILE_MONEY
+  CASH
+  SAVINGS
+  CREDIT_CARD
+  INVESTMENT
+  PETTY_CASH
+  LOAN
+  OTHER
+}
+
+enum LedgerClass {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+  ASSET
+  DEBT
+}
+
+enum TransactionType {
+  MONEY_IN
+  MONEY_OUT
+  TRANSFER
+  ADJUSTMENT
+  OWNER_CONTRIBUTION
+  OWNER_WITHDRAWAL
+  LOAN_RECEIVED
+  LOAN_GIVEN
+  LOAN_REPAYMENT
+  ASSET_PURCHASE
+  ASSET_SALE
+  REFUND
+  REIMBURSEMENT
+  OPENING_BALANCE
+}
+
+enum TransactionStatus {
+  DRAFT
+  SCHEDULED
+  POSTED
+  REVERSED
+  CANCELLED
+}
+
+enum JournalStatus {
+  POSTED
+  REVERSED
+}
+
+enum PlanningStatus {
+  UPCOMING
+  DUE
+  OVERDUE
+  PAID
+  RECEIVED
+  EXPECTED
+  CANCELLED
+  ACTIVE
+  COMPLETED
+}
+
+enum DebtDirection {
+  OWED_BY_PROFILE
+  OWED_TO_PROFILE
+}
+
+enum ReconciliationStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ImportStatus {
+  PENDING
+  VALIDATED
+  IMPORTED
+  FAILED
+}
+
+model User {
+  id           String              @id @default(cuid())
+  name         String
+  email        String              @unique
+  passwordHash String
+  profiles     Profile[]
+  preference   ProfilePreference?
+  auditEvents  AuditEvent[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+}
+
+model Currency {
+  code          String             @id @db.VarChar(3)
+  name          String
+  symbol        String
+  decimalPlaces Int                @default(2)
+  profiles      Profile[]
+  accounts      FinancialAccount[]
+}
+
+model Profile {
+  id                 String              @id @default(cuid())
+  ownerId            String
+  owner              User                @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  name               String
+  type               ProfileType
+  description        String?
+  icon               String              @default("WalletCards")
+  baseCurrencyCode   String              @db.VarChar(3)
+  baseCurrency       Currency            @relation(fields: [baseCurrencyCode], references: [code])
+  financialYearStart Int                 @default(1)
+  status             RecordStatus        @default(ACTIVE)
+  archivedAt         DateTime?
+  preferences        ProfilePreference[]
+  financialAccounts  FinancialAccount[]
+  ledgerAccounts     LedgerAccount[]
+  categories         Category[]
+  transactions       Transaction[]
+  journalEntries     JournalEntry[]
+  attachments        Attachment[]
+  budgets            Budget[]
+  bills              Bill[]
+  expectedIncome     ExpectedIncome[]
+  goals              Goal[]
+  assets             Asset[]
+  debts              Debt[]
+  recurringRules     RecurringRule[]
+  importBatches      ImportBatch[]
+  reconciliations    Reconciliation[]
+  auditEvents        AuditEvent[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@unique([ownerId, name])
+  @@index([ownerId, status])
+}
+
+model ProfilePreference {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  selectedProfileId String?
+  selectedProfile   Profile? @relation(fields: [selectedProfileId], references: [id], onDelete: SetNull)
+  allProfiles        Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+
+  @@unique([userId])
+}
+
+model LedgerAccount {
+  id               String             @id @default(cuid())
+  profileId        String
+  profile          Profile            @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  code             String
+  name             String
+  accountClass     LedgerClass
+  systemKey        String?
+  parentId         String?
+  parent           LedgerAccount?     @relation("LedgerTree", fields: [parentId], references: [id])
+  children         LedgerAccount[]    @relation("LedgerTree")
+  active           Boolean            @default(true)
+  financialAccount FinancialAccount?
+  categories       Category[]
+  journalLines     JournalLine[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([profileId, code])
+  @@unique([profileId, systemKey])
+  @@index([profileId, accountClass])
+}
+
+model FinancialAccount {
+  id                     String               @id @default(cuid())
+  profileId              String
+  profile                Profile              @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  ledgerAccountId        String               @unique
+  ledgerAccount          LedgerAccount        @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  name                   String
+  type                   AccountType
+  institution            String?
+  currencyCode           String               @db.VarChar(3)
+  currency               Currency             @relation(fields: [currencyCode], references: [code])
+  accountIdentifier      String?
+  openingBalance         Decimal              @default(0) @db.Decimal(19, 4)
+  openingBalanceDate     DateTime?
+  status                 RecordStatus         @default(ACTIVE)
+  notes                  String?
+  icon                   String               @default("Landmark")
+  includeInAvailableCash Boolean              @default(true)
+  includeInNetWorth      Boolean              @default(true)
+  archivedAt             DateTime?
+  fromTransactions       Transaction[]        @relation("TransactionFromAccount")
+  toTransactions         Transaction[]        @relation("TransactionToAccount")
+  bills                  Bill[]
+  expectedIncome         ExpectedIncome[]
+  goals                  Goal[]
+  debts                  Debt[]
+  importBatches          ImportBatch[]
+  reconciliations        Reconciliation[]
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  @@unique([profileId, name])
+  @@index([profileId, status])
+}
+
+model Category {
+  id                 String          @id @default(cuid())
+  profileId          String
+  profile            Profile         @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  ledgerAccountId    String
+  ledgerAccount      LedgerAccount   @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  parentId           String?
+  parent             Category?       @relation("CategoryTree", fields: [parentId], references: [id])
+  children           Category[]      @relation("CategoryTree")
+  name               String
+  type               CategoryType
+  icon               String          @default("Tag")
+  active             Boolean         @default(true)
+  attachmentRequired Boolean         @default(false)
+  defaultNotes       String?
+  transactions       Transaction[]
+  budgets            Budget[]
+  bills              Bill[]
+  expectedIncome     ExpectedIncome[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@unique([profileId, type, name])
+  @@index([profileId, type, active])
+}
+
+model Transaction {
+  id               String            @id @default(cuid())
+  profileId        String
+  profile          Profile           @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  type             TransactionType
+  status           TransactionStatus @default(POSTED)
+  amount           Decimal           @db.Decimal(19, 4)
+  feeAmount        Decimal           @default(0) @db.Decimal(19, 4)
+  currencyCode     String            @db.VarChar(3)
+  exchangeRate     Decimal           @default(1) @db.Decimal(19, 8)
+  baseAmount       Decimal           @db.Decimal(19, 4)
+  transactionDate  DateTime
+  description      String?
+  counterparty     String?
+  reference        String?
+  idempotencyKey   String
+  fromAccountId    String?
+  fromAccount      FinancialAccount? @relation("TransactionFromAccount", fields: [fromAccountId], references: [id], onDelete: Restrict)
+  toAccountId      String?
+  toAccount        FinancialAccount? @relation("TransactionToAccount", fields: [toAccountId], references: [id], onDelete: Restrict)
+  categoryId       String?
+  category         Category?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  journalEntry     JournalEntry?
+  attachments      Attachment[]
+  reversedById     String?            @unique
+  reversedBy       Transaction?       @relation("TransactionReversal", fields: [reversedById], references: [id])
+  reverses         Transaction?       @relation("TransactionReversal")
+  bill             Bill?
+  expectedIncome   ExpectedIncome?
+  debtPayments     DebtPayment[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([profileId, idempotencyKey])
+  @@index([profileId, transactionDate(sort: Desc)])
+  @@index([profileId, status, type])
+}
+
+model JournalEntry {
+  id              String        @id @default(cuid())
+  profileId       String
+  profile         Profile       @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  transactionId   String?       @unique
+  transaction     Transaction?  @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  entryDate       DateTime
+  postingDate     DateTime
+  description     String
+  status          JournalStatus @default(POSTED)
+  sourceType      String
+  sourceId        String
+  reversalOfId    String?       @unique
+  reversalOf      JournalEntry? @relation("JournalReversal", fields: [reversalOfId], references: [id])
+  reversedBy      JournalEntry? @relation("JournalReversal")
+  lines           JournalLine[]
+  createdAt       DateTime      @default(now())
+
+  @@unique([profileId, sourceType, sourceId])
+  @@index([profileId, postingDate])
+}
+
+model JournalLine {
+  id                String        @id @default(cuid())
+  journalEntryId    String
+  journalEntry      JournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  ledgerAccountId   String
+  ledgerAccount     LedgerAccount @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  debit             Decimal       @default(0) @db.Decimal(19, 4)
+  credit            Decimal       @default(0) @db.Decimal(19, 4)
+  currencyCode      String        @db.VarChar(3)
+  baseCurrencyAmount Decimal      @db.Decimal(19, 4)
+  description       String?
+
+  @@index([ledgerAccountId, journalEntryId])
+}
+
+model Attachment {
+  id                String       @id @default(cuid())
+  profileId         String
+  profile           Profile      @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  transactionId     String?
+  transaction       Transaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  fileName          String
+  storedName        String
+  mimeType          String
+  sizeBytes         Int
+  attachmentType    String       @default("OTHER")
+  notes             String?
+  storageKey        String
+  ocrStatus         String?
+  extractedMerchant String?
+  extractedDate     DateTime?
+  extractedTotal    Decimal?     @db.Decimal(19, 4)
+  ocrConfidence     Decimal?     @db.Decimal(5, 4)
+  createdAt         DateTime     @default(now())
+}
+
+model Budget {
+  id             String         @id @default(cuid())
+  profileId      String
+  profile        Profile        @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  categoryId     String
+  category       Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  name           String
+  amount         Decimal        @db.Decimal(19, 4)
+  startDate      DateTime
+  endDate        DateTime
+  period         String         @default("MONTHLY")
+  rollover       Boolean        @default(false)
+  alertThreshold Int            @default(80)
+  status         PlanningStatus @default(ACTIVE)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  @@index([profileId, startDate, endDate])
+}
+
+model Bill {
+  id             String            @id @default(cuid())
+  profileId      String
+  profile        Profile           @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  payee          String
+  amount         Decimal           @db.Decimal(19, 4)
+  dueDate        DateTime
+  categoryId     String
+  category       Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  paymentAccountId String?
+  paymentAccount FinancialAccount? @relation(fields: [paymentAccountId], references: [id], onDelete: Restrict)
+  transactionId  String?           @unique
+  transaction    Transaction?      @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  notes          String?
+  status         PlanningStatus    @default(UPCOMING)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  @@index([profileId, dueDate, status])
+}
+
+model ExpectedIncome {
+  id                   String            @id @default(cuid())
+  profileId            String
+  profile              Profile           @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  source               String
+  amount               Decimal           @db.Decimal(19, 4)
+  expectedDate         DateTime
+  categoryId           String
+  category             Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  destinationAccountId String?
+  destinationAccount   FinancialAccount? @relation(fields: [destinationAccountId], references: [id], onDelete: Restrict)
+  transactionId        String?           @unique
+  transaction          Transaction?      @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  notes                String?
+  status               PlanningStatus    @default(EXPECTED)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  @@index([profileId, expectedDate, status])
+}
+
+model Goal {
+  id              String            @id @default(cuid())
+  profileId       String
+  profile         Profile           @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  name            String
+  goalType        String
+  targetAmount    Decimal           @db.Decimal(19, 4)
+  currentAmount   Decimal           @default(0) @db.Decimal(19, 4)
+  targetDate      DateTime?
+  linkedAccountId String?
+  linkedAccount   FinancialAccount? @relation(fields: [linkedAccountId], references: [id], onDelete: SetNull)
+  description     String?
+  status          PlanningStatus    @default(ACTIVE)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+model Asset {
+  id                    String           @id @default(cuid())
+  profileId             String
+  profile               Profile          @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  name                  String
+  assetType             String
+  purchaseDate          DateTime?
+  purchaseValue         Decimal          @default(0) @db.Decimal(19, 4)
+  currentEstimatedValue Decimal          @db.Decimal(19, 4)
+  valuationDate         DateTime
+  description           String?
+  includeInNetWorth     Boolean          @default(true)
+  status                RecordStatus     @default(ACTIVE)
+  valuations            AssetValuation[]
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  @@index([profileId, status])
+}
+
+model AssetValuation {
+  id        String   @id @default(cuid())
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  value     Decimal  @db.Decimal(19, 4)
+  valuedAt  DateTime
+  notes     String?
+  createdAt DateTime @default(now())
+  @@index([assetId, valuedAt(sort: Desc)])
+}
+
+model Debt {
+  id               String            @id @default(cuid())
+  profileId        String
+  profile          Profile           @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  direction        DebtDirection
+  counterparty     String
+  originalAmount   Decimal           @db.Decimal(19, 4)
+  currentBalance   Decimal           @db.Decimal(19, 4)
+  interestRate     Decimal?          @db.Decimal(9, 6)
+  startDate        DateTime
+  dueDate          DateTime?
+  paymentFrequency String?
+  relatedAccountId String?
+  relatedAccount   FinancialAccount? @relation(fields: [relatedAccountId], references: [id], onDelete: SetNull)
+  notes            String?
+  status           PlanningStatus    @default(ACTIVE)
+  payments         DebtPayment[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  @@index([profileId, direction, status])
+}
+
+model DebtPayment {
+  id            String      @id @default(cuid())
+  debtId        String
+  debt          Debt        @relation(fields: [debtId], references: [id], onDelete: Restrict)
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  principal     Decimal     @db.Decimal(19, 4)
+  interest      Decimal     @default(0) @db.Decimal(19, 4)
+  fees          Decimal     @default(0) @db.Decimal(19, 4)
+  paymentDate   DateTime
+  createdAt     DateTime    @default(now())
+}
+
+model RecurringRule {
+  id          String   @id @default(cuid())
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  name        String
+  cadence     String
+  nextRunDate DateTime
+  active      Boolean  @default(true)
+  template    Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ImportBatch {
+  id          String           @id @default(cuid())
+  profileId   String
+  profile     Profile          @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  accountId   String
+  account     FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  fileName    String
+  status      ImportStatus     @default(PENDING)
+  mapping     Json?
+  records     ImportedRecord[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model ImportedRecord {
+  id                  String        @id @default(cuid())
+  importBatchId       String
+  importBatch         ImportBatch   @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  rowNumber           Int
+  rawData             Json
+  externalId          String?
+  duplicateFingerprint String?
+  status              ImportStatus @default(PENDING)
+  errorMessage        String?
+  createdAt           DateTime     @default(now())
+  @@unique([importBatchId, rowNumber])
+  @@index([duplicateFingerprint])
+}
+
+model Reconciliation {
+  id               String               @id @default(cuid())
+  profileId        String
+  profile          Profile              @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  accountId        String
+  account          FinancialAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  closingDate      DateTime
+  statementBalance Decimal              @db.Decimal(19, 4)
+  ledgerBalance    Decimal              @db.Decimal(19, 4)
+  difference       Decimal              @db.Decimal(19, 4)
+  status           ReconciliationStatus @default(DRAFT)
+  completedAt      DateTime?
+  items            ReconciliationItem[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  @@index([profileId, accountId, closingDate])
+}
+
+model ReconciliationItem {
+  id               String         @id @default(cuid())
+  reconciliationId String
+  reconciliation   Reconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Restrict)
+  journalLineId    String
+  cleared          Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  @@unique([reconciliationId, journalLineId])
+}
+
+model AuditEvent {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  profileId      String?
+  profile        Profile? @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  action         String
+  recordType     String
+  recordId       String
+  previousValues Json?
+  newValues      Json?
+  source         String   @default("WEB")
+  createdAt      DateTime @default(now())
+  @@index([profileId, createdAt(sort: Desc)])
+  @@index([recordType, recordId])
+}
