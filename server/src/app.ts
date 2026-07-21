@@ -14,8 +14,9 @@ import { createToken, requireAuth } from './middleware/auth.js';
 import { createFinancialAccount, createProfile, initializeOwner } from './services/profile-service.js';
 import { createPostedTransaction, reversePostedTransaction } from './services/transaction-service.js';
 import { accountSummaries, assertProfileAccess, dashboard, ledgerBalances } from './services/report-service.js';
-import { payBill, receiveExpectedIncome } from './services/planning-service.js';
+import { assertNoBudgetOverlap, getBudgetMovements, payBill, receiveExpectedIncome } from './services/planning-service.js';
 import { buildCashForecast } from './domain/forecast.js';
+import { inclusiveBudgetRange } from './domain/budget.js';
 
 const app = express();
 const param = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
@@ -181,14 +182,15 @@ app.get('/api/profiles/:profileId/planning', async (request, response, next) => 
   try {
     const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
     const [budgets, bills, expectedIncome, goals, accounts] = await Promise.all([
-      prisma.budget.findMany({ where: { profileId }, include: { category: true }, orderBy: { startDate: 'desc' } }),
+      prisma.budget.findMany({ where: { profileId, status: 'ACTIVE' }, include: { category: true }, orderBy: { startDate: 'desc' } }),
       prisma.bill.findMany({ where: { profileId }, include: { category: true }, orderBy: { dueDate: 'asc' } }),
       prisma.expectedIncome.findMany({ where: { profileId }, include: { category: true }, orderBy: { expectedDate: 'asc' } }),
       prisma.goal.findMany({ where: { profileId }, orderBy: { createdAt: 'desc' } }),
       accountSummaries(request.userId!, profileId),
     ]);
     const budgetsWithUsage = await Promise.all(budgets.map(async (budget) => {
-      const spent = await prisma.transaction.aggregate({ where: { profileId, categoryId: budget.categoryId, type: 'MONEY_OUT', status: 'POSTED', transactionDate: { gte: budget.startDate, lte: budget.endDate } }, _sum: { baseAmount: true } });
+      const range = inclusiveBudgetRange(budget.startDate, budget.endDate);
+      const spent = await prisma.transaction.aggregate({ where: { profileId, categoryId: budget.categoryId, type: 'MONEY_OUT', status: 'POSTED', transactionDate: { gte: range.start, lte: range.end } }, _sum: { baseAmount: true } });
       const amountSpent = spent._sum.baseAmount?.toString() ?? '0'; const percentUsed = Math.round(Number(amountSpent) / Number(budget.amount) * 100);
       return { ...budget, spent: amountSpent, percentUsed, thresholdReached: percentUsed >= budget.alertThreshold };
     }));
@@ -207,10 +209,36 @@ app.get('/api/profiles/:profileId/planning', async (request, response, next) => 
 app.post('/api/profiles/:profileId/budgets', validate(budgetSchema), async (request, response, next) => {
   try {
     const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
-    const category = await prisma.category.findFirst({ where: { id: request.body.categoryId, profileId, type: 'EXPENSE' } });
+    const category = await prisma.category.findFirst({ where: { id: request.body.categoryId, profileId, type: 'EXPENSE', active: true } });
     if (!category) throw new AppError(400, 'Choose an expense category from this profile.');
+    await assertNoBudgetOverlap(profileId, request.body.categoryId, request.body.startDate, request.body.endDate);
     response.status(201).json(await prisma.budget.create({ data: { ...request.body, profileId } }));
   } catch (error) { next(error); }
+});
+
+app.put('/api/profiles/:profileId/budgets/:budgetId', validate(budgetSchema), async (request, response, next) => {
+  try {
+    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
+    const budget = await prisma.budget.findFirst({ where: { id: param(request.params.budgetId), profileId, status: 'ACTIVE' } });
+    if (!budget) throw new AppError(404, 'Active budget not found.');
+    const category = await prisma.category.findFirst({ where: { id: request.body.categoryId, profileId, type: 'EXPENSE', active: true } });
+    if (!category) throw new AppError(400, 'Choose an expense category from this profile.');
+    await assertNoBudgetOverlap(profileId, request.body.categoryId, request.body.startDate, request.body.endDate, budget.id);
+    response.json(await prisma.budget.update({ where: { id: budget.id }, data: request.body }));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/budgets/:budgetId/archive', async (request, response, next) => {
+  try {
+    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
+    const budget = await prisma.budget.findFirst({ where: { id: param(request.params.budgetId), profileId, status: 'ACTIVE' } });
+    if (!budget) throw new AppError(404, 'Active budget not found.');
+    response.json(await prisma.budget.update({ where: { id: budget.id }, data: { status: 'ARCHIVED' } }));
+  } catch (error) { next(error); }
+});
+
+app.get('/api/profiles/:profileId/budgets/:budgetId/movements', async (request, response, next) => {
+  try { response.json(await getBudgetMovements(request.userId!, param(request.params.profileId), param(request.params.budgetId))); } catch (error) { next(error); }
 });
 
 app.post('/api/profiles/:profileId/bills', validate(billSchema), async (request, response, next) => {

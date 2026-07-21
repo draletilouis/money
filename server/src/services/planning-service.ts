@@ -3,8 +3,29 @@ import { prisma } from '../lib/db.js';
 import { AppError } from '../lib/http.js';
 import { createPostedTransactionInDatabase } from './transaction-service.js';
 import type { PlanningSettlementInput } from '../../../shared/contracts.js';
+import { inclusiveBudgetRange } from '../domain/budget.js';
 
 const transactionOptions = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable } as const;
+
+export async function assertNoBudgetOverlap(profileId: string, categoryId: string, startDate: Date, endDate: Date, excludeBudgetId?: string) {
+  const overlapping = await prisma.budget.findFirst({ where: {
+    profileId, categoryId, status: 'ACTIVE', id: excludeBudgetId ? { not: excludeBudgetId } : undefined,
+    startDate: { lte: endDate }, endDate: { gte: startDate },
+  } });
+  if (overlapping) throw new AppError(409, `This period overlaps the active budget “${overlapping.name}” for the same category.`);
+}
+
+export async function getBudgetMovements(userId: string, profileId: string, budgetId: string) {
+  const budget = await prisma.budget.findFirst({ where: { id: budgetId, profileId, profile: { ownerId: userId } }, include: { category: true } });
+  if (!budget) throw new AppError(404, 'Budget not found.');
+  const range = inclusiveBudgetRange(budget.startDate, budget.endDate);
+  const movements = await prisma.transaction.findMany({
+    where: { profileId, categoryId: budget.categoryId, type: 'MONEY_OUT', status: 'POSTED', transactionDate: { gte: range.start, lte: range.end } },
+    include: { fromAccount: true }, orderBy: [{ transactionDate: 'desc' }, { createdAt: 'desc' }],
+  });
+  const spent = movements.reduce((sum, item) => sum + Number(item.baseAmount), 0);
+  return { budget, spent: spent.toFixed(2), remaining: (Number(budget.amount) - spent).toFixed(2), movements };
+}
 
 export async function payBill(userId: string, profileId: string, billId: string, input: PlanningSettlementInput) {
   try {

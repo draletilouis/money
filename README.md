@@ -23,7 +23,7 @@ A ledger-backed financial command centre for one owner managing personal finance
 - Upload validated receipts, images, PDFs, DOCX, and XLSX files
 - Ledger-derived dashboard, account balances, net worth, trial balance, and profit summary
 - Assets with valuations
-- Budgets whose usage is calculated from posted spending
+- Editable and archivable budgets with live posted-spending movements, overlap protection, and threshold warnings
 - Operational bills and expected income that post to the ledger when settled
 - Savings goals with progress tracking and 7, 30, and 90-day cash forecasts
 - Budget threshold warnings and upcoming attention items

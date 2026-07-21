@@ -87,6 +87,7 @@ enum PlanningStatus {
   CANCELLED
   ACTIVE
   COMPLETED
+  ARCHIVED
 }
 
 enum DebtDirection {
