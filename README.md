@@ -26,7 +26,7 @@ A ledger-backed financial command centre for one owner managing personal finance
 - Assets with valuations
 - Category-driven budgets with live posted-spending movements, overlap protection, threshold warnings, and bill-payment previews
 - Operational bills and expected income that post to the ledger when settled
-- Savings goals with progress tracking and 7, 30, and 90-day cash forecasts
+- Savings goals with contribution/withdrawal history, derived progress, monthly target guidance, and 7, 30, and 90-day cash forecasts
 - Budget threshold warnings and upcoming attention items
 - CSV report export, print-ready reports, mobile navigation, and responsive forms
 - Seeded Personal, Island Farm, and Restaurant profiles with realistic UGX activity

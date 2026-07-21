@@ -90,6 +90,12 @@ enum PlanningStatus {
   ARCHIVED
 }
 
+enum GoalMovementType {
+  OPENING_BALANCE
+  CONTRIBUTION
+  WITHDRAWAL
+}
+
 enum DebtDirection {
   OWED_BY_PROFILE
   OWED_TO_PROFILE
@@ -226,6 +232,7 @@ model FinancialAccount {
   bills                  Bill[]
   expectedIncome         ExpectedIncome[]
   goals                  Goal[]
+  goalMovements          GoalMovement[]
   debts                  Debt[]
   importBatches          ImportBatch[]
   reconciliations        Reconciliation[]
@@ -430,8 +437,25 @@ model Goal {
   linkedAccount   FinancialAccount? @relation(fields: [linkedAccountId], references: [id], onDelete: SetNull)
   description     String?
   status          PlanningStatus    @default(ACTIVE)
+  movements       GoalMovement[]
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
+}
+
+model GoalMovement {
+  id           String           @id @default(cuid())
+  goalId       String
+  goal         Goal             @relation(fields: [goalId], references: [id], onDelete: Restrict)
+  accountId    String?
+  account      FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  type         GoalMovementType
+  amount       Decimal          @db.Decimal(19, 4)
+  movementDate DateTime
+  notes        String?
+  createdAt    DateTime         @default(now())
+
+  @@index([goalId, movementDate(sort: Desc)])
+  @@index([accountId, movementDate(sort: Desc)])
 }
 
 model Asset {

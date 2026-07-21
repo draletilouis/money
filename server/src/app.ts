@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
-import { accountSchema, assetSchema, billSchema, budgetSchema, categorySchema, categoryUpdateSchema, expectedIncomeSchema, goalProgressSchema, goalSchema, loginSchema, planningSettlementSchema, profileSchema, setupSchema, transactionSchema } from '../../shared/contracts.js';
+import { accountSchema, assetSchema, billSchema, budgetSchema, categorySchema, categoryUpdateSchema, expectedIncomeSchema, goalMovementSchema, goalSchema, loginSchema, planningSettlementSchema, profileSchema, setupSchema, transactionSchema } from '../../shared/contracts.js';
 import { prisma } from './lib/db.js';
 import { AppError, errorHandler, notFound, validate } from './lib/http.js';
 import { createToken, requireAuth } from './middleware/auth.js';
@@ -18,6 +18,7 @@ import { assertNoBudgetOverlap, getBudgetMovements, payBill, receiveExpectedInco
 import { buildCashForecast } from './domain/forecast.js';
 import { inclusiveBudgetRange } from './domain/budget.js';
 import { archiveCategory, createCategory, restoreCategory, updateCategory } from './services/category-service.js';
+import { addGoalMovement, createGoal, getGoal, listGoals } from './services/goal-service.js';
 
 const app = express();
 const param = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
@@ -193,7 +194,7 @@ app.get('/api/profiles/:profileId/planning', async (request, response, next) => 
       prisma.budget.findMany({ where: { profileId, status: 'ACTIVE' }, include: { category: true }, orderBy: { startDate: 'desc' } }),
       prisma.bill.findMany({ where: { profileId }, include: { category: true }, orderBy: { dueDate: 'asc' } }),
       prisma.expectedIncome.findMany({ where: { profileId }, include: { category: true }, orderBy: { expectedDate: 'asc' } }),
-      prisma.goal.findMany({ where: { profileId }, orderBy: { createdAt: 'desc' } }),
+      listGoals(request.userId!, profileId),
       accountSummaries(request.userId!, profileId),
     ]);
     const budgetsWithUsage = await Promise.all(budgets.map(async (budget) => {
@@ -296,21 +297,15 @@ app.post('/api/profiles/:profileId/expected-income/:incomeId/cancel', async (req
 });
 
 app.post('/api/profiles/:profileId/goals', validate(goalSchema), async (request, response, next) => {
-  try {
-    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
-    if (request.body.linkedAccountId && !await prisma.financialAccount.findFirst({ where: { id: request.body.linkedAccountId, profileId, status: 'ACTIVE' } })) throw new AppError(400, 'Linked account does not belong to this profile.');
-    const status = request.body.currentAmount >= request.body.targetAmount ? 'COMPLETED' : 'ACTIVE';
-    response.status(201).json(await prisma.goal.create({ data: { ...request.body, profileId, status } }));
-  } catch (error) { next(error); }
+  try { response.status(201).json(await createGoal(request.userId!, param(request.params.profileId), request.body)); } catch (error) { next(error); }
 });
 
-app.patch('/api/profiles/:profileId/goals/:goalId/progress', validate(goalProgressSchema), async (request, response, next) => {
-  try {
-    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
-    const goal = await prisma.goal.findFirst({ where: { id: param(request.params.goalId), profileId } });
-    if (!goal) throw new AppError(404, 'Goal not found.');
-    response.json(await prisma.goal.update({ where: { id: goal.id }, data: { currentAmount: request.body.currentAmount, status: request.body.currentAmount >= Number(goal.targetAmount) ? 'COMPLETED' : 'ACTIVE' } }));
-  } catch (error) { next(error); }
+app.get('/api/profiles/:profileId/goals/:goalId', async (request, response, next) => {
+  try { response.json(await getGoal(request.userId!, param(request.params.profileId), param(request.params.goalId))); } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/goals/:goalId/movements', validate(goalMovementSchema), async (request, response, next) => {
+  try { response.status(201).json(await addGoalMovement(request.userId!, param(request.params.profileId), param(request.params.goalId), request.body)); } catch (error) { next(error); }
 });
 
 app.get('/api/profiles/:profileId/reports/trial-balance', async (request, response, next) => {

@@ -114,17 +114,21 @@ export const goalSchema = z.object({
   targetAmount: z.coerce.number().positive().max(999_999_999_999),
   currentAmount: z.coerce.number().min(0).max(999_999_999_999).default(0),
   targetDate: z.coerce.date().optional(),
-  linkedAccountId: z.string().min(1).optional(),
+  linkedAccountId: z.string().min(1),
   description: z.string().trim().max(1000).optional(),
 });
+
+export const goalMovementSchema = z.object({
+  type: z.enum(['CONTRIBUTION', 'WITHDRAWAL']),
+  amount: z.coerce.number().positive().max(999_999_999_999),
+  accountId: z.string().min(1),
+  movementDate: z.coerce.date(),
+  notes: z.string().trim().max(500).optional(),
+}).refine((data) => data.movementDate <= new Date(), { message: 'Goal movements cannot be dated in the future.', path: ['movementDate'] });
 
 export const planningSettlementSchema = z.object({
   accountId: z.string().min(1),
   transactionDate: z.coerce.date(),
-});
-
-export const goalProgressSchema = z.object({
-  currentAmount: z.coerce.number().min(0).max(999_999_999_999),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -136,4 +140,5 @@ export type BudgetInput = z.infer<typeof budgetSchema>;
 export type BillInput = z.infer<typeof billSchema>;
 export type ExpectedIncomeInput = z.infer<typeof expectedIncomeSchema>;
 export type GoalInput = z.infer<typeof goalSchema>;
+export type GoalMovementInput = z.infer<typeof goalMovementSchema>;
 export type PlanningSettlementInput = z.infer<typeof planningSettlementSchema>;
