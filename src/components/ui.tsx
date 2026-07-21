@@ -24,6 +24,7 @@ export function ErrorState({ message, retry }: { message: string; retry?: () => 
 
 export function StatusBadge({ status }: { status: string }) { return <span className={`status status-${status.toLowerCase()}`}>{status.toLowerCase().replaceAll('_', ' ')}</span>; }
 
-export const formatMoney = (amount: string | number, currency = 'UGX', compact = false) => new Intl.NumberFormat('en-UG', { style: 'currency', currency, maximumFractionDigits: currency === 'UGX' ? 0 : 2, notation: compact ? 'compact' : 'standard' }).format(Number(amount));
+export const formatMoney = (amount: string | number, currency = 'UGX', compact = false) => new Intl.NumberFormat('en-UG', currency === 'UGX'
+  ? { maximumFractionDigits: 0, notation: compact ? 'compact' : 'standard' }
+  : { style: 'currency', currency, maximumFractionDigits: 2, notation: compact ? 'compact' : 'standard' }).format(Number(amount));
 export const formatDate = (date: string | Date) => new Intl.DateTimeFormat('en-UG', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(date));
-
