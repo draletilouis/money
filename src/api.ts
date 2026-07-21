@@ -1,4 +1,4 @@
-const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
+const baseUrl = import.meta.env.VITE_API_URL ?? '/api';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public issues?: unknown) { super(message); }
@@ -15,4 +15,3 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
-

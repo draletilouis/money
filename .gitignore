@@ -9,4 +9,4 @@ uploads/*
 playwright-report/
 test-results/
 *.log
-
+.railway/

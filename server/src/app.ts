@@ -7,11 +7,11 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
-import { accountSchema, assetSchema, budgetSchema, categorySchema, loginSchema, profileSchema, transactionSchema } from '../../shared/contracts.js';
+import { accountSchema, assetSchema, budgetSchema, categorySchema, loginSchema, profileSchema, setupSchema, transactionSchema } from '../../shared/contracts.js';
 import { prisma } from './lib/db.js';
 import { AppError, errorHandler, notFound, validate } from './lib/http.js';
 import { createToken, requireAuth } from './middleware/auth.js';
-import { createFinancialAccount, createProfile } from './services/profile-service.js';
+import { createFinancialAccount, createProfile, initializeOwner } from './services/profile-service.js';
 import { createPostedTransaction, reversePostedTransaction } from './services/transaction-service.js';
 import { accountSummaries, assertProfileAccess, dashboard, ledgerBalances } from './services/report-service.js';
 
@@ -24,6 +24,19 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
 app.get('/api/health', (_request, response) => response.json({ status: 'ok' }));
+
+app.get('/api/auth/setup-status', async (_request, response, next) => {
+  try { response.json({ required: await prisma.user.count() === 0 }); } catch (error) { next(error); }
+});
+
+app.post('/api/auth/setup', rateLimit({ windowMs: 60 * 60_000, limit: 5 }), validate(setupSchema), async (request, response, next) => {
+  try {
+    const user = await initializeOwner({ name: request.body.name, email: request.body.email, passwordHash: await bcrypt.hash(request.body.password, 12) });
+    if (!user) throw new AppError(409, 'Initial setup has already been completed.');
+    response.cookie('money_manager_session', createToken(user.id), { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 7 * 24 * 60 * 60_000 });
+    response.status(201).json({ user: { id: user.id, name: user.name, email: user.email } });
+  } catch (error) { next(error); }
+});
 
 app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60_000, limit: 15 }), validate(loginSchema), async (request, response, next) => {
   try {
@@ -198,6 +211,14 @@ app.get('/api/profiles/:profileId/reports/profit-loss', async (request, response
     const income = balances.filter((item) => item.accountClass === 'INCOME'); const expenses = balances.filter((item) => item.accountClass === 'EXPENSE');
     response.json({ income, expenses, totalIncome: income.reduce((sum, item) => sum + Number(item.balance), 0), totalExpenses: expenses.reduce((sum, item) => sum + Number(item.balance), 0) });
   } catch (error) { next(error); }
+});
+
+const webRoot = path.resolve(process.cwd(), 'dist');
+app.use(express.static(webRoot));
+app.use((request, response, next) => {
+  const indexFile = path.join(webRoot, 'index.html');
+  if (request.method === 'GET' && !request.path.startsWith('/api') && fs.existsSync(indexFile)) return response.sendFile(indexFile);
+  next();
 });
 
 app.use(notFound);

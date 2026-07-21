@@ -5,6 +5,12 @@ export const loginSchema = z.object({
   password: z.string().min(8),
 });
 
+export const setupSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  email: z.string().email(),
+  password: z.string().min(12).max(128),
+});
+
 export const profileSchema = z.object({
   name: z.string().trim().min(2).max(80),
   type: z.enum(['PERSONAL', 'BUSINESS', 'INVESTMENT', 'PROJECT', 'OTHER']),
@@ -88,4 +94,3 @@ export type AccountInput = z.infer<typeof accountSchema>;
 export type TransactionInput = z.infer<typeof transactionSchema>;
 export type AssetInput = z.infer<typeof assetSchema>;
 export type BudgetInput = z.infer<typeof budgetSchema>;
-

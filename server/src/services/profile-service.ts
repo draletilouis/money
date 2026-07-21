@@ -1,4 +1,4 @@
-import type { AccountType, ProfileType } from '@prisma/client';
+import type { AccountType, Prisma, ProfileType } from '@prisma/client';
 import { Decimal } from 'decimal.js';
 import { prisma } from '../lib/db.js';
 
@@ -44,8 +44,9 @@ const categories = [
   ['Other expense', 'EXPENSE', 'OTHER_EXPENSE'],
 ] as const;
 
-export async function createProfile(ownerId: string, input: { name: string; type: ProfileType; description?: string; baseCurrencyCode: string; financialYearStart: number }) {
-  return prisma.$transaction(async (database) => {
+type ProfileInput = { name: string; type: ProfileType; description?: string; baseCurrencyCode: string; financialYearStart: number };
+
+async function createProfileInDatabase(database: Prisma.TransactionClient, ownerId: string, input: ProfileInput) {
     const profile = await database.profile.create({ data: { ownerId, ...input } });
     for (const [code, name, accountClass, systemKey] of ledgerTemplate) {
       await database.ledgerAccount.create({ data: { profileId: profile.id, code, name, accountClass, systemKey } });
@@ -56,6 +57,22 @@ export async function createProfile(ownerId: string, input: { name: string; type
     await database.profilePreference.upsert({ where: { userId: ownerId }, create: { userId: ownerId, selectedProfileId: profile.id }, update: { selectedProfileId: profile.id, allProfiles: false } });
     await database.auditEvent.create({ data: { userId: ownerId, profileId: profile.id, action: 'CREATED', recordType: 'PROFILE', recordId: profile.id, newValues: { name: profile.name, type: profile.type } } });
     return profile;
+}
+
+export async function createProfile(ownerId: string, input: ProfileInput) {
+  return prisma.$transaction((database) => createProfileInDatabase(database, ownerId, input));
+}
+
+export async function initializeOwner(input: { name: string; email: string; passwordHash: string }) {
+  return prisma.$transaction(async (database) => {
+    await database.$executeRaw`SELECT pg_advisory_xact_lock(7212026)`;
+    if (await database.user.count()) return null;
+
+    await database.currency.upsert({ where: { code: 'UGX' }, create: { code: 'UGX', name: 'Ugandan Shilling', symbol: 'UGX', decimalPlaces: 0 }, update: {} });
+    await database.currency.upsert({ where: { code: 'USD' }, create: { code: 'USD', name: 'US Dollar', symbol: '$', decimalPlaces: 2 }, update: {} });
+    const user = await database.user.create({ data: { name: input.name, email: input.email.toLowerCase(), passwordHash: input.passwordHash } });
+    await createProfileInDatabase(database, user.id, { name: 'Personal', type: 'PERSONAL', description: 'Personal finances', baseCurrencyCode: 'UGX', financialYearStart: 1 });
+    return user;
   });
 }
 

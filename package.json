@@ -7,7 +7,7 @@
     "dev": "concurrently -n api,web -c blue,green \"tsx watch server/src/index.ts\" \"vite\"",
     "dev:api": "tsx watch server/src/index.ts",
     "dev:web": "vite",
-    "build": "tsc -p server/tsconfig.json && vite build",
+    "build": "prisma generate && tsc -p server/tsconfig.json && vite build",
     "start": "node server/dist/server/src/index.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json",
     "lint": "eslint src server/src shared scripts prisma/seed.ts vite.config.ts --max-warnings 0",

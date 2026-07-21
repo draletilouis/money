@@ -101,7 +101,11 @@ Set at least:
 - `VITE_API_URL`: public API base URL at client build time
 - `UPLOAD_DIR`: persistent attachment location
 
-Run `npm ci`, `npm run db:deploy`, `npm run build`, then `npm start`. In a production deployment, serve `dist/` from a CDN/static host or add it to the Express hosting layer, and place attachments behind durable object storage.
+Run `npm ci`, `npm run db:deploy`, `npm run build`, then `npm start`. The Express service serves the compiled React app from `dist/`. On the first visit to an empty database, create the owner account through the protected one-time setup screen; this creates only an empty Personal profile and its required accounting structure. Do not run `npm run db:seed` in production.
+
+### Railway
+
+The checked-in `railway.json` builds the application, applies Prisma migrations in Railway's pre-deploy phase, starts the single Express/React service, and checks `/api/health`. Add a PostgreSQL service and set `DATABASE_URL` to its Railway reference, plus a long random `JWT_SECRET` and `NODE_ENV=production`. The Railway deployment never invokes the development seed.
 
 ## Financial integrity
 
@@ -134,4 +138,3 @@ This first release concentrates on the ledger foundation and daily money workflo
 - End-to-end browser tests and production password-reset/MFA flows
 
 These are not represented as finished buttons. The implemented navigation and primary actions are connected to persisted data.
-
