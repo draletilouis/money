@@ -6,7 +6,14 @@ import type { TransactionInput } from '../../../shared/contracts.js';
 
 export async function createPostedTransaction(userId: string, profileId: string, input: TransactionInput) {
   try {
-    return await prisma.$transaction(async (database) => {
+    return await prisma.$transaction((database) => createPostedTransactionInDatabase(database, userId, profileId, input), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new AppError(409, 'This transaction was already posted.');
+    throw error;
+  }
+}
+
+export async function createPostedTransactionInDatabase(database: Prisma.TransactionClient, userId: string, profileId: string, input: TransactionInput) {
       const profile = await database.profile.findFirst({ where: { id: profileId, ownerId: userId, status: 'ACTIVE' } });
       if (!profile) throw new AppError(404, 'Profile not found.');
 
@@ -46,11 +53,6 @@ export async function createPostedTransaction(userId: string, profileId: string,
       } });
       await database.auditEvent.create({ data: { userId, profileId, action: 'POSTED', recordType: 'TRANSACTION', recordId: transaction.id, newValues: { type: transaction.type, amount: transaction.amount.toString() } } });
       return database.transaction.findUniqueOrThrow({ where: { id: transaction.id }, include: { fromAccount: true, toAccount: true, category: true, attachments: true } });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new AppError(409, 'This transaction was already posted.');
-    throw error;
-  }
 }
 
 export async function reversePostedTransaction(userId: string, profileId: string, transactionId: string) {
@@ -82,4 +84,3 @@ export async function reversePostedTransaction(userId: string, profileId: string
     return reversal;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
-

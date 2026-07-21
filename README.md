@@ -24,7 +24,9 @@ A ledger-backed financial command centre for one owner managing personal finance
 - Ledger-derived dashboard, account balances, net worth, trial balance, and profit summary
 - Assets with valuations
 - Budgets whose usage is calculated from posted spending
-- Bills, expected income, goals, and upcoming attention items
+- Operational bills and expected income that post to the ledger when settled
+- Savings goals with progress tracking and 7, 30, and 90-day cash forecasts
+- Budget threshold warnings and upcoming attention items
 - CSV report export, print-ready reports, mobile navigation, and responsive forms
 - Seeded Personal, Island Farm, and Restaurant profiles with realistic UGX activity
 
@@ -131,7 +133,6 @@ This first release concentrates on the ledger foundation and daily money workflo
 - CSV statement mapping, duplicate review, and posting workflow
 - Account reconciliation workflow
 - Automatic recurring-rule execution
-- Bill-payment and expected-income conversion screens
 - Debt repayment schedules and principal/interest/fee posting UI
 - Full foreign-currency revaluation
 - Cloud object storage and OCR processing

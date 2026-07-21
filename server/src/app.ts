@@ -7,13 +7,15 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
-import { accountSchema, assetSchema, budgetSchema, categorySchema, loginSchema, profileSchema, setupSchema, transactionSchema } from '../../shared/contracts.js';
+import { accountSchema, assetSchema, billSchema, budgetSchema, categorySchema, expectedIncomeSchema, goalProgressSchema, goalSchema, loginSchema, planningSettlementSchema, profileSchema, setupSchema, transactionSchema } from '../../shared/contracts.js';
 import { prisma } from './lib/db.js';
 import { AppError, errorHandler, notFound, validate } from './lib/http.js';
 import { createToken, requireAuth } from './middleware/auth.js';
 import { createFinancialAccount, createProfile, initializeOwner } from './services/profile-service.js';
 import { createPostedTransaction, reversePostedTransaction } from './services/transaction-service.js';
 import { accountSummaries, assertProfileAccess, dashboard, ledgerBalances } from './services/report-service.js';
+import { payBill, receiveExpectedIncome } from './services/planning-service.js';
+import { buildCashForecast } from './domain/forecast.js';
 
 const app = express();
 const param = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
@@ -178,17 +180,27 @@ app.post('/api/profiles/:profileId/assets', validate(assetSchema), async (reques
 app.get('/api/profiles/:profileId/planning', async (request, response, next) => {
   try {
     const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
-    const [budgets, bills, expectedIncome, goals] = await Promise.all([
+    const [budgets, bills, expectedIncome, goals, accounts] = await Promise.all([
       prisma.budget.findMany({ where: { profileId }, include: { category: true }, orderBy: { startDate: 'desc' } }),
       prisma.bill.findMany({ where: { profileId }, include: { category: true }, orderBy: { dueDate: 'asc' } }),
       prisma.expectedIncome.findMany({ where: { profileId }, include: { category: true }, orderBy: { expectedDate: 'asc' } }),
       prisma.goal.findMany({ where: { profileId }, orderBy: { createdAt: 'desc' } }),
+      accountSummaries(request.userId!, profileId),
     ]);
     const budgetsWithUsage = await Promise.all(budgets.map(async (budget) => {
       const spent = await prisma.transaction.aggregate({ where: { profileId, categoryId: budget.categoryId, type: 'MONEY_OUT', status: 'POSTED', transactionDate: { gte: budget.startDate, lte: budget.endDate } }, _sum: { baseAmount: true } });
-      return { ...budget, spent: spent._sum.baseAmount?.toString() ?? '0' };
+      const amountSpent = spent._sum.baseAmount?.toString() ?? '0'; const percentUsed = Math.round(Number(amountSpent) / Number(budget.amount) * 100);
+      return { ...budget, spent: amountSpent, percentUsed, thresholdReached: percentUsed >= budget.alertThreshold };
     }));
-    response.json({ budgets: budgetsWithUsage, bills, expectedIncome, goals });
+    const now = new Date(); const today = new Date(now); today.setHours(0, 0, 0, 0); const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const datedStatus = (status: string, date: Date, expected: boolean) => {
+      if (['PAID', 'RECEIVED', 'CANCELLED', 'COMPLETED'].includes(status)) return status;
+      if (date < today) return 'OVERDUE'; if (date < tomorrow) return 'DUE'; return expected ? 'EXPECTED' : 'UPCOMING';
+    };
+    const openBills = bills.filter((item) => !['PAID', 'CANCELLED'].includes(item.status)).map((item) => ({ amount: item.amount.toString(), date: item.dueDate }));
+    const openIncome = expectedIncome.filter((item) => !['RECEIVED', 'CANCELLED'].includes(item.status)).map((item) => ({ amount: item.amount.toString(), date: item.expectedDate }));
+    const currentAvailable = accounts.filter((item) => item.includeInAvailableCash).reduce((sum, item) => sum + Number(item.balance), 0);
+    response.json({ budgets: budgetsWithUsage, bills: bills.map((item) => ({ ...item, status: datedStatus(item.status, item.dueDate, false) })), expectedIncome: expectedIncome.map((item) => ({ ...item, status: datedStatus(item.status, item.expectedDate, true) })), goals, forecast: buildCashForecast(currentAvailable, openBills, openIncome, now) });
   } catch (error) { next(error); }
 });
 
@@ -198,6 +210,70 @@ app.post('/api/profiles/:profileId/budgets', validate(budgetSchema), async (requ
     const category = await prisma.category.findFirst({ where: { id: request.body.categoryId, profileId, type: 'EXPENSE' } });
     if (!category) throw new AppError(400, 'Choose an expense category from this profile.');
     response.status(201).json(await prisma.budget.create({ data: { ...request.body, profileId } }));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/bills', validate(billSchema), async (request, response, next) => {
+  try {
+    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
+    const category = await prisma.category.findFirst({ where: { id: request.body.categoryId, profileId, type: 'EXPENSE', active: true } });
+    if (!category) throw new AppError(400, 'Choose an expense category from this profile.');
+    if (request.body.paymentAccountId && !await prisma.financialAccount.findFirst({ where: { id: request.body.paymentAccountId, profileId, status: 'ACTIVE' } })) throw new AppError(400, 'Payment account does not belong to this profile.');
+    response.status(201).json(await prisma.bill.create({ data: { ...request.body, profileId } }));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/bills/:billId/pay', validate(planningSettlementSchema), async (request, response, next) => {
+  try { response.json(await payBill(request.userId!, param(request.params.profileId), param(request.params.billId), request.body)); } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/bills/:billId/cancel', async (request, response, next) => {
+  try {
+    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
+    const bill = await prisma.bill.findFirst({ where: { id: param(request.params.billId), profileId } });
+    if (!bill) throw new AppError(404, 'Bill not found.'); if (bill.status === 'PAID') throw new AppError(409, 'A paid bill cannot be cancelled.');
+    response.json(await prisma.bill.update({ where: { id: bill.id }, data: { status: 'CANCELLED' } }));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/expected-income', validate(expectedIncomeSchema), async (request, response, next) => {
+  try {
+    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
+    const category = await prisma.category.findFirst({ where: { id: request.body.categoryId, profileId, type: 'INCOME', active: true } });
+    if (!category) throw new AppError(400, 'Choose an income category from this profile.');
+    if (request.body.destinationAccountId && !await prisma.financialAccount.findFirst({ where: { id: request.body.destinationAccountId, profileId, status: 'ACTIVE' } })) throw new AppError(400, 'Deposit account does not belong to this profile.');
+    response.status(201).json(await prisma.expectedIncome.create({ data: { ...request.body, profileId } }));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/expected-income/:incomeId/receive', validate(planningSettlementSchema), async (request, response, next) => {
+  try { response.json(await receiveExpectedIncome(request.userId!, param(request.params.profileId), param(request.params.incomeId), request.body)); } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/expected-income/:incomeId/cancel', async (request, response, next) => {
+  try {
+    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
+    const income = await prisma.expectedIncome.findFirst({ where: { id: param(request.params.incomeId), profileId } });
+    if (!income) throw new AppError(404, 'Expected income not found.'); if (income.status === 'RECEIVED') throw new AppError(409, 'Received income cannot be cancelled.');
+    response.json(await prisma.expectedIncome.update({ where: { id: income.id }, data: { status: 'CANCELLED' } }));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/profiles/:profileId/goals', validate(goalSchema), async (request, response, next) => {
+  try {
+    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
+    if (request.body.linkedAccountId && !await prisma.financialAccount.findFirst({ where: { id: request.body.linkedAccountId, profileId, status: 'ACTIVE' } })) throw new AppError(400, 'Linked account does not belong to this profile.');
+    const status = request.body.currentAmount >= request.body.targetAmount ? 'COMPLETED' : 'ACTIVE';
+    response.status(201).json(await prisma.goal.create({ data: { ...request.body, profileId, status } }));
+  } catch (error) { next(error); }
+});
+
+app.patch('/api/profiles/:profileId/goals/:goalId/progress', validate(goalProgressSchema), async (request, response, next) => {
+  try {
+    const profileId = param(request.params.profileId); await assertProfileAccess(request.userId!, profileId);
+    const goal = await prisma.goal.findFirst({ where: { id: param(request.params.goalId), profileId } });
+    if (!goal) throw new AppError(404, 'Goal not found.');
+    response.json(await prisma.goal.update({ where: { id: goal.id }, data: { currentAmount: request.body.currentAmount, status: request.body.currentAmount >= Number(goal.targetAmount) ? 'COMPLETED' : 'ACTIVE' } }));
   } catch (error) { next(error); }
 });
 

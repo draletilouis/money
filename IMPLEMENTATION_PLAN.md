@@ -27,5 +27,4 @@ Money is stored as PostgreSQL `Decimal(19,4)` values. JavaScript financial calcu
 
 ## Initial release scope
 
-The first working release includes authentication, profiles, accounts, categories, the three primary transaction flows, reversals, dashboard, assets, basic planning, and ledger reports. CSV importing, reconciliation, recurring job execution, and cloud object storage retain complete schema boundaries but are follow-on operational modules.
-
+The first working release includes authentication, profiles, accounts, categories, the three primary transaction flows, reversals, dashboard, assets, operational planning, and ledger reports. CSV importing, reconciliation, recurring job execution, and cloud object storage retain complete schema boundaries but are follow-on operational modules.

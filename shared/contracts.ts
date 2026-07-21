@@ -88,9 +88,50 @@ export const budgetSchema = z.object({
   alertThreshold: z.coerce.number().int().min(1).max(100).default(80),
 }).refine((data) => data.endDate >= data.startDate, { message: 'Budget end date must be after its start date.', path: ['endDate'] });
 
+export const billSchema = z.object({
+  payee: z.string().trim().min(2).max(120),
+  amount: z.coerce.number().positive().max(999_999_999_999),
+  dueDate: z.coerce.date(),
+  categoryId: z.string().min(1),
+  paymentAccountId: z.string().min(1).optional(),
+  notes: z.string().trim().max(1000).optional(),
+});
+
+export const expectedIncomeSchema = z.object({
+  source: z.string().trim().min(2).max(120),
+  amount: z.coerce.number().positive().max(999_999_999_999),
+  expectedDate: z.coerce.date(),
+  categoryId: z.string().min(1),
+  destinationAccountId: z.string().min(1).optional(),
+  notes: z.string().trim().max(1000).optional(),
+});
+
+export const goalSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  goalType: z.enum(['SAVINGS', 'EMERGENCY_FUND', 'PURCHASE', 'DEBT_REPAYMENT', 'INVESTMENT', 'OTHER']),
+  targetAmount: z.coerce.number().positive().max(999_999_999_999),
+  currentAmount: z.coerce.number().min(0).max(999_999_999_999).default(0),
+  targetDate: z.coerce.date().optional(),
+  linkedAccountId: z.string().min(1).optional(),
+  description: z.string().trim().max(1000).optional(),
+});
+
+export const planningSettlementSchema = z.object({
+  accountId: z.string().min(1),
+  transactionDate: z.coerce.date(),
+});
+
+export const goalProgressSchema = z.object({
+  currentAmount: z.coerce.number().min(0).max(999_999_999_999),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
 export type AccountInput = z.infer<typeof accountSchema>;
 export type TransactionInput = z.infer<typeof transactionSchema>;
 export type AssetInput = z.infer<typeof assetSchema>;
 export type BudgetInput = z.infer<typeof budgetSchema>;
+export type BillInput = z.infer<typeof billSchema>;
+export type ExpectedIncomeInput = z.infer<typeof expectedIncomeSchema>;
+export type GoalInput = z.infer<typeof goalSchema>;
+export type PlanningSettlementInput = z.infer<typeof planningSettlementSchema>;
